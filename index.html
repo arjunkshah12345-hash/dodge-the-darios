@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DODGE THE DARIOS</title>
+<style>
+  :root { --clay: #d97757; --cream: #f5efe6; --ink: #141413; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--ink); overflow: hidden; color: var(--cream);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  video { display: none; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .tl { position: absolute; top: 20px; left: 24px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
+  .score { position: absolute; top: 14px; right: 24px; text-align: right; }
+  .score b { display: block; font-size: 56px; line-height: 1; font-weight: 800; color: var(--cream); font-variant-numeric: tabular-nums; }
+  .score span { font-size: 12px; letter-spacing: .14em; opacity: .7; }
+  .lives { position: absolute; top: 44px; left: 24px; font-size: 22px; letter-spacing: 4px; color: var(--clay); }
+  .blast { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); width: 260px; text-align: center; font-size: 11px; letter-spacing: .16em; }
+  .bar { height: 6px; background: #ffffff22; margin-top: 6px; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--clay); transition: width .1s linear; }
+  #overlay { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #2a1a14b0, #141413d8);
+    z-index: 5; text-align: center; padding: 24px; }
+  #overlay.hidden { display: none; }
+  h1 { font-size: clamp(48px, 9vw, 120px); line-height: .9; font-weight: 900; letter-spacing: -.03em; }
+  h1 em { font-style: normal; color: var(--clay); }
+  .sub { margin: 20px auto 28px; max-width: 520px; font-size: 14px; line-height: 1.6; opacity: .8; }
+  .sub kbd { background: #ffffff18; padding: 1px 6px; border-radius: 4px; }
+  button { pointer-events: auto; font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    background: var(--clay); color: var(--ink); border: 0; padding: 16px 34px; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 0 0 0 #d9775788; animation: pulse 1.8s infinite; }
+  button:disabled { opacity: .5; animation: none; cursor: wait; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 22px #d9775700; } 100% { box-shadow: 0 0 0 0 #d9775700; } }
+  .heads { display: flex; justify-content: center; gap: 10px; margin-bottom: 26px; }
+  .heads img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; object-position: 46% 30%; border: 3px solid var(--clay);
+    animation: bob 1.4s ease-in-out infinite; }
+  .heads img.you { width: 110px; height: 110px; object-position: center; }
+  .heads img:nth-child(2) { animation-delay: .2s } .heads img:nth-child(3) { animation-delay: .4s }
+  @keyframes bob { 50% { transform: translateY(-10px) rotate(8deg); } }
+  #status { margin-top: 14px; font-size: 12px; opacity: .6; min-height: 1em; }
+  .credit { position: fixed; bottom: 8px; right: 12px; font-size: 10px; opacity: .45; z-index: 6; }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="tl">Dodge the Darios</div>
+  <div class="lives" id="lives"></div>
+  <div class="score"><b id="score">0</b><span id="best">BEST 0</span></div>
+  <div class="blast">OPEN MOUTH → SCALING BLAST<div class="bar"><i id="bar"></i></div></div>
+</div>
+
+<div id="overlay">
+  <div>
+    <div class="heads"><img src="dario.jpg" alt=""><img src="dario.jpg" alt=""><img src="dario.jpg" alt=""></div>
+    <h1>DODGE THE<br><em>DARIOS</em></h1>
+    <p class="sub" id="sub">Your face is the controller. Move your head to dodge incoming Dario Amodeis.
+      <b>Open your mouth wide</b> to fire a scaling-law shockwave. Grab ✳ for a shield, ❚❚ for slow-mo. Every hit makes you look more like Dario.
+      Close calls score bonus points. No webcam? Use the mouse + <kbd>space</kbd>.</p>
+    <button id="start" disabled>Loading face model…</button>
+    <div id="status"></div>
+  </div>
+</div>
+<div class="credit">Photo: <a href="https://www.flickr.com/photos/techcrunch/53202070940/" style="color:inherit">TechCrunch</a>, <a href="https://creativecommons.org/licenses/by/2.0" style="color:inherit">CC BY 2.0</a> (cropped) · <a href="https://github.com/arjunkshah12345-hash/dodge-the-darios" style="color:inherit">source</a></div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "./vendor/vision_bundle.mjs";
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const video = document.getElementById("video");
+const $ = id => document.getElementById(id);
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener("resize", resize); resize();
+
+// ---- Dario sprite: pre-cropped circular face ----
+const img = new Image(); img.src = "dario.jpg";
+const SPR = 256;
+const sprite = document.createElement("canvas"); sprite.width = sprite.height = SPR;
+const spriteHit = document.createElement("canvas"); spriteHit.width = spriteHit.height = SPR;
+img.onload = () => {
+  for (const [c, tint] of [[sprite, null], [spriteHit, "#ff3b2f"]]) {
+    const g = c.getContext("2d");
+    g.save(); g.beginPath(); g.arc(SPR/2, SPR/2, SPR/2 - 4, 0, Math.PI*2); g.clip();
+    // face region in the 500x647 source photo
+    g.drawImage(img, 70, 85, 330, 330, 0, 0, SPR, SPR);
+    if (tint) { g.globalCompositeOperation = "source-atop"; g.globalAlpha = .55; g.fillStyle = tint; g.fillRect(0,0,SPR,SPR); }
+    g.restore();
+    g.lineWidth = 8; g.strokeStyle = "#d97757"; g.beginPath(); g.arc(SPR/2, SPR/2, SPR/2 - 4, 0, Math.PI*2); g.stroke();
+  }
+};
+
+const QUOTES = ["SCALING LAWS!", "Machines of Loving Grace", "RSP says hi", "ASL-3!!", "Powerful AI by 2027", "country of geniuses",
+  "interpretability!", "it's just more compute", "race to the top", "constitutional, baby", "hold still", "safety first", "compressed 21st century"];
+
+// ---- synth SFX (no audio files) ----
+let AC = null;
+function sfx(type) {
+  if (!AC) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.connect(g); g.connect(AC.destination);
+  const env = (a, d) => { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(a, t + .01); g.gain.exponentialRampToValueAtTime(.001, t + d); o.start(t); o.stop(t + d); };
+  if (type === "blast") { o.type = "sawtooth"; o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(900, t + .35); env(.25, .45); noise(.35, .2); }
+  else if (type === "hit") { o.type = "square"; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(40, t + .4); env(.3, .5); noise(.4, .35); }
+  else if (type === "kill") { o.type = "triangle"; o.frequency.setValueAtTime(500 + Math.random() * 400, t); o.frequency.exponentialRampToValueAtTime(1600, t + .08); env(.15, .12); }
+  else if (type === "near") { o.type = "sine"; o.frequency.setValueAtTime(880, t); o.frequency.setValueAtTime(1320, t + .05); env(.12, .14); }
+  else if (type === "power") { o.type = "triangle"; [523, 659, 784, 1047].forEach((f, i) => o.frequency.setValueAtTime(f, t + i * .06)); env(.2, .35); }
+  else if (type === "boss") { o.type = "sawtooth"; o.frequency.setValueAtTime(55, t); o.frequency.linearRampToValueAtTime(70, t + 1.2); env(.3, 1.4); }
+}
+function noise(dur, vol) {
+  const b = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = vol; s.buffer = b; s.connect(g); g.connect(AC.destination); s.start();
+}
+
+// ---- state ----
+let face = { x: W/2, y: H/2, r: 80, ok: false, jaw: 0 };
+let darios = [], parts = [], pops = [], waves = [], powers = [];
+let score = 0, best = +localStorage.dariosBest || 0, lives = 3, t0 = 0, running = false, shake = 0, flash = 0, blast = 1, invuln = 0;
+let combo = 1, comboT = 0, shieldT = 0, slowT = 0, powerT = 8, bossT = 35, banner = null, hits = 0;
+let spawnT = 0, lastT = performance.now(), useMouse = false, mouse = { x: W/2, y: H/2 }, spaceDown = false;
+$("best").textContent = "BEST " + best;
+
+addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+addEventListener("keydown", e => { if (e.code === "Space") { spaceDown = true; e.preventDefault(); } });
+addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+
+// ---- face tracking ----
+let landmarker = null;
+async function initModel() {
+  try {
+    const fs = await FilesetResolver.forVisionTasks(new URL("./vendor/wasm", location.href).href);
+    landmarker = await FaceLandmarker.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: "./vendor/face_landmarker.task", delegate: "GPU" },
+      runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true,
+    });
+    $("start").textContent = "Start · enable webcam";
+  } catch (e) {
+    console.error(e); $("status").textContent = "Face model failed to load — mouse mode only.";
+    useMouse = true; $("start").textContent = "Start (mouse mode)";
+  }
+  $("start").disabled = false;
+}
+initModel();
+
+async function startCam() {
+  if (useMouse) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" }, audio: false });
+    video.srcObject = stream; await video.play();
+  } catch (e) {
+    $("status").textContent = "No webcam access — using mouse."; useMouse = true;
+  }
+}
+
+// map normalized video coords -> mirrored, cover-fit screen coords
+function vmap(nx, ny) {
+  const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+  const s = Math.max(W / vw, H / vh), dw = vw * s, dh = vh * s;
+  return [W - ((nx * dw) + (W - dw) / 2), ny * dh + (H - dh) / 2, s];
+}
+
+let lastVideoTime = -1;
+function track(now) {
+  if (useMouse) {
+    face.x += (mouse.x - face.x) * .35; face.y += (mouse.y - face.y) * .35; face.r = 70; face.ok = true;
+    face.jaw = spaceDown ? 1 : 0; return;
+  }
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const res = landmarker.detectForVideo(video, now);
+  const lm = res.faceLandmarks?.[0];
+  if (!lm) { face.ok = false; return; }
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (const p of lm) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+  const [cx, cy] = vmap((minX + maxX) / 2, (minY + maxY) / 2);
+  const [ax] = vmap(minX, 0), [bx] = vmap(maxX, 0);
+  const r = Math.abs(bx - ax) * .48;
+  face.x += (cx - face.x) * .6; face.y += (cy - face.y) * .6; face.r += (r - face.r) * .3; face.ok = true;
+  const bs = res.faceBlendshapes?.[0]?.categories;
+  face.jaw = bs ? (bs.find(c => c.categoryName === "jawOpen")?.score || 0) : 0;
+  face.lm = lm;
+}
+
+// ---- game ----
+function spawn(elapsed) {
+  const lvl = 1 + elapsed / 20;
+  const side = Math.random();
+  let x, y;
+  if (side < .55) { x = Math.random() * W; y = -80; }
+  else if (side < .775) { x = -80; y = Math.random() * H * .7; }
+  else { x = W + 80; y = Math.random() * H * .7; }
+  const homing = Math.random() < Math.min(.15 + elapsed / 120, .5);
+  const tx = homing ? face.x : Math.random() * W, ty = homing ? face.y : H + 100;
+  const ang = Math.atan2(ty - y, tx - x), sp = (180 + Math.random() * 140) * Math.min(lvl, 3.2);
+  const big = Math.random() < .12;
+  darios.push({ x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: big ? 95 : 42 + Math.random() * 26,
+    rot: Math.random() * 6, vr: (Math.random() - .5) * 6, homing, near: false, hp: big ? 2 : 1, big,
+    quote: Math.random() < .4 ? QUOTES[Math.random() * QUOTES.length | 0] : null, age: 0 });
+}
+
+function spawnBoss() {
+  darios.push({ x: W / 2, y: -200, vx: 0, vy: 90, r: 170, rot: 0, vr: 1.5, homing: false, boss: true, hp: 3, maxHp: 3,
+    near: false, quote: "I AM THE SCALING LAW", age: 0, hurt: 0 });
+  banner = { text: "MEGA DARIO INCOMING", life: 2.2 }; sfx("boss"); shake = 20;
+}
+
+function spawnPower() {
+  const kind = Math.random() < .5 ? "shield" : "slow", fromLeft = Math.random() < .5;
+  powers.push({ kind, x: fromLeft ? -40 : W + 40, y: H * (.25 + Math.random() * .5), vx: (fromLeft ? 1 : -1) * (120 + Math.random() * 80), t: 0 });
+}
+
+function addCombo(x, y, base, label) {
+  comboT = 2.2; const pts = base * combo; score += pts;
+  pop(x, y, `${label}+${pts}`, combo > 1 ? "#d97757" : "#f5efe6", combo > 3 ? 26 : 20);
+  combo = Math.min(8, combo + 1);
+}
+
+function killDario(d) {
+  d.dead = true; burst(d.x, d.y, d.boss ? 120 : 26, "#d97757", d.boss ? 900 : 500); sfx("kill");
+  addCombo(d.x, d.y, d.boss ? 250 : d.big ? 50 : 25, d.boss ? "MEGA KILL " : "");
+  if (d.boss) {
+    shake = 40; banner = { text: "MEGA DARIO DEFEATED", life: 1.8 };
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2;
+      darios.push({ x: d.x, y: d.y, vx: Math.cos(a) * 420, vy: Math.sin(a) * 420, r: 36, rot: a, vr: 8, homing: false, near: true, hp: 1, age: 0, spawnGrace: .35 });
+    }
+  }
+}
+
+function burst(x, y, n, col, spd = 400) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Math.random() * spd;
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, col, size: 2 + Math.random() * 5 });
+  }
+}
+function pop(x, y, text, col = "#f5efe6", size = 28) { pops.push({ x, y, text, col, size, life: 1 }); }
+
+function reset() {
+  darios = []; parts = []; pops = []; waves = []; powers = [];
+  score = 0; lives = 3; blast = 1; invuln = 1.5; t0 = performance.now(); spawnT = 0; running = true;
+  combo = 1; comboT = 0; shieldT = 0; slowT = 0; powerT = 8; bossT = 35; hits = 0; banner = { text: "DODGE!", life: 1.2 };
+  $("overlay").classList.add("hidden");
+}
+
+function gameOver() {
+  running = false;
+  if (score > best) { best = Math.floor(score); localStorage.dariosBest = best; }
+  $("best").textContent = "BEST " + best;
+  $("overlay").classList.remove("hidden");
+  $("overlay").querySelector("h1").innerHTML = `DARIO'D<br><em>${Math.floor(score)}</em>`;
+  $("sub").innerHTML = `You were aligned by ${Math.floor(score) < 300 ? "a lot of" : "too many"} Darios. Best: ${best}.<br>Your transformation into Dario is complete. Open your mouth for the shockwave — it's your only defense.`;
+  $("start").textContent = "Again";
+  // freeze-frame of you, Dario-fied, as a souvenir
+  const snap = document.createElement("canvas"); snap.width = 360; snap.height = 360;
+  const s = 360 / (face.r * 2.6);
+  snap.getContext("2d").drawImage(cv, (face.x - face.r * 1.3) * DPR, (face.y - face.r * 1.4) * DPR, face.r * 2.6 * DPR, face.r * 2.6 * DPR, 0, 0, 360, 360);
+  const im = $("overlay").querySelector(".heads");
+  im.innerHTML = `<img src="dario.jpg" alt=""><img class="you" src="${snap.toDataURL()}" alt="you, dario-fied"><img src="dario.jpg" alt="">`;
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  if (!AC) { AC = new (window.AudioContext || window.webkitAudioContext)(); }
+  if (!video.srcObject) await startCam();
+  $("start").disabled = false; reset();
+};
+
+function update(dt, now) {
+  track(now);
+  const elapsed = (now - t0) / 1000;
+  blast = Math.min(1, blast + dt / 4);
+  invuln = Math.max(0, invuln - dt);
+  shake *= Math.pow(.02, dt); flash = Math.max(0, flash - dt * 3);
+  shieldT = Math.max(0, shieldT - dt); slowT = Math.max(0, slowT - dt);
+  comboT -= dt; if (comboT <= 0) combo = 1;
+  if (banner) { banner.life -= dt; if (banner.life <= 0) banner = null; }
+  const ts = slowT > 0 ? .35 : 1, gdt = dt * ts; // game-time for enemies
+
+  if (running) {
+    score += dt * 10 * (1 + elapsed / 30);
+    spawnT -= gdt;
+    if (spawnT <= 0) { spawn(elapsed); spawnT = Math.max(.18, .9 - elapsed / 60) * (.6 + Math.random() * .8); }
+    bossT -= dt; if (bossT <= 0) { spawnBoss(); bossT = 45; }
+    powerT -= dt; if (powerT <= 0) { spawnPower(); powerT = 12 + Math.random() * 8; }
+
+    // mouth-open blast
+    if (face.ok && face.jaw > .45 && blast >= 1) {
+      blast = 0; waves.push({ x: face.x, y: face.y, r: face.r, life: 1, hit: new Set() }); shake = 14; sfx("blast");
+      pop(face.x, face.y - face.r - 30, "SCALING BLAST!", "#d97757", 34);
+    }
+  }
+
+  for (const w of waves) {
+    w.r += dt * 1400; w.life -= dt * 1.6;
+    for (const d of darios) {
+      const dist = Math.hypot(d.x - w.x, d.y - w.y);
+      if (!d.dead && !w.hit.has(d) && dist < w.r + d.r && dist > w.r - 120 - d.r) {
+        w.hit.add(d);
+        if (--d.hp <= 0) killDario(d);
+        else { d.hurt = .3; d.r *= .82; burst(d.x, d.y, 30, "#f5efe6", 400); sfx("kill"); if (d.boss) pop(d.x, d.y - d.r, `${d.hp} HP LEFT`, "#d97757", 30); }
+      }
+    }
+  }
+  waves = waves.filter(w => w.life > 0);
+
+  for (const p of powers) {
+    p.t += dt; p.x += p.vx * dt; p.y += Math.sin(p.t * 3) * 40 * dt;
+    if (running && face.ok && Math.hypot(p.x - face.x, p.y - face.y) < face.r + 34) {
+      p.got = true; sfx("power"); burst(p.x, p.y, 40, "#f5efe6", 500);
+      if (p.kind === "shield") { shieldT = 6; banner = { text: "CONSTITUTIONAL SHIELD", life: 1.5 }; }
+      else { slowT = 5; banner = { text: "PAUSE · ASL-4 REVIEW", life: 1.5 }; }
+    }
+  }
+  powers = powers.filter(p => !p.got && p.x > -100 && p.x < W + 100);
+
+  for (const d of darios) {
+    d.age += gdt; d.hurt = Math.max(0, (d.hurt || 0) - dt); d.spawnGrace = Math.max(0, (d.spawnGrace || 0) - dt);
+    d.stun = Math.max(0, (d.stun || 0) - dt);
+    if (d.stun > 0) { d.vx *= Math.pow(.25, dt); d.vy *= Math.pow(.25, dt); }
+    else if ((d.homing || d.boss) && running && (d.boss || d.age < 2.2)) {
+      const a = Math.atan2(face.y - d.y, face.x - d.x);
+      if (d.boss) { d.vx += Math.cos(a) * 140 * gdt; d.vy += Math.sin(a) * 140 * gdt; const sp = Math.hypot(d.vx, d.vy); if (sp > 160) { d.vx *= 160 / sp; d.vy *= 160 / sp; } }
+      else {
+        const sp = Math.hypot(d.vx, d.vy), cur = Math.atan2(d.vy, d.vx);
+        let diff = Math.atan2(Math.sin(a - cur), Math.cos(a - cur));
+        const na = cur + diff * Math.min(1, gdt * 1.6);
+        d.vx = Math.cos(na) * sp; d.vy = Math.sin(na) * sp;
+      }
+    }
+    d.x += d.vx * gdt; d.y += d.vy * gdt; d.rot += d.vr * gdt;
+    if (!running || !face.ok || d.dead || d.spawnGrace > 0) continue;
+    const dist = Math.hypot(d.x - face.x, d.y - face.y), rr = d.r * .85 + face.r * .8;
+    if (dist < rr && shieldT > 0 && !d.boss) {
+      killDario(d); // shield vaporizes regular Darios on contact
+    } else if (dist < rr && invuln <= 0 && shieldT <= 0) {
+      if (!d.boss) d.dead = true; else { const a = Math.atan2(d.y - face.y, d.x - face.x); d.vx = Math.cos(a) * 700; d.vy = Math.sin(a) * 700; d.stun = 2.2; }
+      lives--; hits++; invuln = 1.5; shake = 30; flash = 1; combo = 1; sfx("hit");
+      burst(face.x, face.y, 60, "#ff3b2f", 700);
+      pop(face.x, face.y - face.r - 20, ["DARIO'D", "GLASSES ACQUIRED", "THE CURLS SPREAD", "FULLY DARIO"][Math.min(hits, 3)], "#ff3b2f", 40);
+      if (lives <= 0) gameOver();
+    } else if (dist < rr + 60 && !d.near) {
+      d.near = true; d.nearT = true;
+    } else if (d.nearT && dist > rr + 80) {
+      d.nearT = false; sfx("near"); addCombo(d.x, d.y, 15, "CLOSE CALL ");
+    }
+  }
+  darios = darios.filter(d => !d.dead && d.x > -400 && d.x < W + 400 && d.y > -400 && d.y < H + 400);
+
+  // menu attract mode: lazy floating Darios behind the overlay
+  if (!running && darios.length < 7 && Math.random() < dt * 2) {
+    const x = Math.random() * W;
+    darios.push({ x, y: H + 100, vx: (Math.random() - .5) * 60, vy: -60 - Math.random() * 80, r: 30 + Math.random() * 50, rot: Math.random() * 6, vr: (Math.random() - .5) * 2, age: 9, hp: 1 });
+  }
+
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 600 * dt; p.vx *= .98; p.life -= dt * 1.4; }
+  parts = parts.filter(p => p.life > 0);
+  for (const p of pops) { p.y -= 60 * dt; p.life -= dt * 1.1; }
+  pops = pops.filter(p => p.life > 0);
+}
+
+// ---- render ----
+const off = document.createElement("canvas"), og = off.getContext("2d", { willReadFrequently: false });
+function drawVideo(now) {
+  if (useMouse || video.readyState < 2) {
+    const g = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * .7);
+    g.addColorStop(0, "#2a1d17"); g.addColorStop(1, "#141413"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); return;
+  }
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
+  const dw = vw * s, dh = vh * s;
+  // pixelated low-res draw for a chunky retro vibe
+  const px = 5; off.width = Math.ceil(W / px); off.height = Math.ceil(H / px);
+  og.save(); og.translate(off.width, 0); og.scale(-1, 1);
+  og.drawImage(video, (W - dw) / 2 / px, (H - dh) / 2 / px, dw / px, dh / px); og.restore();
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.filter = "grayscale(1) contrast(1.35) brightness(.75)";
+  ctx.drawImage(off, 0, 0, W, H); ctx.filter = "none";
+  // duotone tint
+  ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = "#d9a07f"; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "source-over"; ctx.restore();
+  // scanlines
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  for (let y = (now / 40) % 4; y < H; y += 4) ctx.fillRect(0, y, W, 1.5);
+  // vignette
+  const g = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * .3, W/2, H/2, Math.max(W, H) * .75);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.7)"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+function drawFace(now) {
+  if (!face.ok) {
+    ctx.fillStyle = "#f5efe6"; ctx.font = "700 20px ui-monospace, monospace"; ctx.textAlign = "center";
+    ctx.fillText(useMouse ? "" : "NO FACE DETECTED — GET IN FRAME", W/2, H - 70); return;
+  }
+  const blink = invuln > 0 && Math.floor(now / 80) % 2;
+  ctx.save();
+  ctx.globalAlpha = blink ? .3 : 1;
+  // targeting reticle
+  ctx.strokeStyle = blast >= 1 ? "#d97757" : "#f5efe6"; ctx.lineWidth = 3;
+  ctx.setLineDash([14, 10]); ctx.lineDashOffset = -now / 30;
+  ctx.beginPath(); ctx.arc(face.x, face.y, face.r * .8 + 10, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  // corner brackets
+  const b = face.r * 1.05, L = 22; ctx.lineWidth = 4;
+  for (const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+    ctx.beginPath(); ctx.moveTo(face.x + sx*b, face.y + sy*(b-L)); ctx.lineTo(face.x + sx*b, face.y + sy*b); ctx.lineTo(face.x + sx*(b-L), face.y + sy*b); ctx.stroke();
+  }
+  // landmark dots
+  if (face.lm) {
+    ctx.fillStyle = "rgba(245,239,230,.55)";
+    for (let i = 0; i < face.lm.length; i += 3) { const [x, y] = vmap(face.lm[i].x, face.lm[i].y); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  }
+  // jaw meter
+  ctx.fillStyle = "#d97757"; ctx.fillRect(face.x - 30, face.y + b + 12, 60 * Math.min(1, face.jaw / .45), 4);
+  ctx.restore();
+  darioify(now);
+  if (shieldT > 0) {
+    const fade = shieldT < 1.5 ? (Math.floor(now / 100) % 2 ? .3 : .9) : .9;
+    ctx.save(); ctx.globalAlpha = fade;
+    const g = ctx.createRadialGradient(face.x, face.y, face.r * .6, face.x, face.y, face.r * 1.5);
+    g.addColorStop(0, "rgba(245,239,230,0)"); g.addColorStop(.8, "rgba(245,239,230,.15)"); g.addColorStop(1, "rgba(245,239,230,.6)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(face.x, face.y, face.r * 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#f5efe6"; ctx.lineWidth = 3; ctx.stroke();
+    drawStar(face.x, face.y - face.r * 1.5, 14, now / 300, "#f5efe6");
+    ctx.restore();
+  }
+}
+
+// each hit turns you a little more into Dario: 1 = glasses, 2 = + curls, 3 = + mic & smile
+function darioify(now) {
+  if (hits < 1) return;
+  let L, R, top, ang, ew;
+  if (face.lm) {
+    const P = i => vmap(face.lm[i].x, face.lm[i].y);
+    const [a, b2, c, d] = [P(33), P(133), P(362), P(263)];
+    L = [(a[0] + b2[0]) / 2, (a[1] + b2[1]) / 2]; R = [(c[0] + d[0]) / 2, (c[1] + d[1]) / 2];
+    top = P(10); ang = Math.atan2(R[1] - L[1], R[0] - L[0]);
+  } else {
+    L = [face.x - face.r * .35, face.y - face.r * .15]; R = [face.x + face.r * .35, face.y - face.r * .15];
+    top = [face.x, face.y - face.r * .9]; ang = 0;
+  }
+  ew = Math.hypot(R[0] - L[0], R[1] - L[1]);
+  const mid = [(L[0] + R[0]) / 2, (L[1] + R[1]) / 2];
+  ctx.save(); ctx.translate(mid[0], mid[1]); ctx.rotate(ang);
+  if (hits >= 2) { // curly hair cloud over the forehead
+    ctx.save(); ctx.translate(0, -ew * .9); ctx.fillStyle = "#3a2618"; ctx.strokeStyle = "#1e130b"; ctx.lineWidth = 2;
+    for (let i = 0; i < 26; i++) {
+      const t = i / 25, x = (t - .5) * ew * 2.3, y = -Math.sin(t * Math.PI) * ew * .55 + Math.sin(i * 7.1) * ew * .08;
+      const rr = ew * (.17 + (i * 37 % 10) / 100) * (1 + Math.sin(now / 200 + i) * .04);
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // the glasses
+  const gw = ew * .62, gh = ew * .44;
+  ctx.lineWidth = Math.max(3, ew * .07); ctx.strokeStyle = "#1c2433"; ctx.fillStyle = "rgba(170,200,230,.18)";
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sx * ew / 2 - gw / 2, -gh / 2, gw, gh, gh * .45); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(-ew / 2 + gw / 2, -gh * .1); ctx.quadraticCurveTo(0, -gh * .35, ew / 2 - gw / 2, -gh * .1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-ew / 2 - gw / 2, -gh * .15); ctx.lineTo(-ew * 1.05, -gh * .05); ctx.moveTo(ew / 2 + gw / 2, -gh * .15); ctx.lineTo(ew * 1.05, -gh * .05); ctx.stroke();
+  // lens glint
+  ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 2;
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * ew / 2 - gw * .3, -gh * .1); ctx.lineTo(sx * ew / 2 - gw * .1, -gh * .3); ctx.stroke(); }
+  if (hits >= 3) { // headset mic, TechCrunch-style
+    ctx.strokeStyle = "#e8cfa8"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-ew * 1.05, ew * .1); ctx.quadraticCurveTo(-ew * .9, ew * .9, -ew * .45, ew * .95); ctx.stroke();
+    ctx.fillStyle = "#e8cfa8"; ctx.beginPath(); ctx.arc(-ew * .45, ew * .95, ew * .07, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawStar(x, y, r, rot, col) { // Claude-ish sparkle asterisk
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = col;
+  for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); ctx.beginPath(); ctx.ellipse(0, -r * .55, r * .14, r * .5, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+function drawPowers(now) {
+  for (const p of powers) {
+    ctx.save(); ctx.globalAlpha = .25 + Math.sin(now / 150) * .1; ctx.fillStyle = p.kind === "shield" ? "#f5efe6" : "#7fb3d9";
+    ctx.beginPath(); ctx.arc(p.x, p.y, 40, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    if (p.kind === "shield") drawStar(p.x, p.y, 34, now / 400, "#d97757");
+    else { ctx.fillStyle = "#7fb3d9"; ctx.fillRect(p.x - 14, p.y - 18, 10, 36); ctx.fillRect(p.x + 4, p.y - 18, 10, 36); }
+    ctx.font = "700 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#f5efe6";
+    ctx.fillText(p.kind === "shield" ? "SHIELD" : "SLOW-MO", p.x, p.y + 58);
+  }
+}
+
+function drawDarios(now) {
+  for (const d of darios) {
+    // motion trail
+    for (let k = 3; k > 0; k--) {
+      ctx.globalAlpha = .08 * k;
+      ctx.drawImage(sprite, d.x - d.vx * .02 * k - d.r, d.y - d.vy * .02 * k - d.r, d.r * 2, d.r * 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(Math.sin(d.rot) * .5);
+    const sq = 1 + Math.sin(now / 90 + d.rot) * .05;
+    ctx.scale(sq, 2 - sq);
+    ctx.drawImage(d.homing || d.hurt > 0 ? spriteHit : sprite, -d.r, -d.r, d.r * 2, d.r * 2);
+    ctx.restore();
+    if (d.boss) {
+      ctx.fillStyle = "#141413aa"; ctx.fillRect(d.x - 90, d.y - d.r - 26, 180, 10);
+      ctx.fillStyle = "#ff3b2f"; ctx.fillRect(d.x - 90, d.y - d.r - 26, 180 * d.hp / d.maxHp, 10);
+      ctx.font = "900 14px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#f5efe6";
+      ctx.fillText("MEGA DARIO", d.x, d.y - d.r - 34);
+    }
+    if (d.homing) { ctx.strokeStyle = "rgba(255,59,47,.6)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, d.r + 6 + Math.sin(now/100)*3, 0, Math.PI*2); ctx.stroke(); }
+    if (d.quote && d.age < 2.5) {
+      ctx.font = "700 13px ui-monospace, monospace"; ctx.textAlign = "left";
+      const tw = ctx.measureText(d.quote).width, bx = d.x + d.r * .6, by = d.y - d.r - 30;
+      ctx.fillStyle = "#f5efe6"; ctx.beginPath(); ctx.roundRect(bx, by, tw + 16, 24, 8); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(bx + 8, by + 24); ctx.lineTo(bx + 2, by + 34); ctx.lineTo(bx + 18, by + 24); ctx.fill();
+      ctx.fillStyle = "#141413"; ctx.fillText(d.quote, bx + 8, by + 16);
+    }
+  }
+}
+
+function render(now) {
+  ctx.save();
+  if (shake > .5) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+  drawVideo(now);
+  for (const w of waves) {
+    ctx.strokeStyle = `rgba(217,119,87,${w.life})`; ctx.lineWidth = 18 * w.life + 2;
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = `rgba(245,239,230,${w.life * .6})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(w.x, w.y, w.r * .85, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (slowT > 0) { ctx.fillStyle = "rgba(60,110,160,.18)"; ctx.fillRect(0, 0, W, H); }
+  drawDarios(now);
+  drawPowers(now);
+  if (running) drawFace(now);
+  for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, p.size, p.size); }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "center";
+  for (const p of pops) {
+    ctx.globalAlpha = Math.max(0, p.life); ctx.font = `900 ${p.size}px ui-monospace, monospace`;
+    ctx.fillStyle = "#141413"; ctx.fillText(p.text, p.x + 2, p.y + 2); ctx.fillStyle = p.col; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,59,47,${flash * .35})`; ctx.fillRect(0, 0, W, H); }
+  if (banner && running) {
+    const k = Math.min(1, banner.life * 3), sc = 1 + (1 - Math.min(1, (2.2 - banner.life) * 6)) * .5;
+    ctx.save(); ctx.globalAlpha = k; ctx.translate(W / 2, H * .22); ctx.scale(sc, sc);
+    ctx.font = "900 italic 52px ui-monospace, monospace"; ctx.textAlign = "center";
+    ctx.fillStyle = "#141413"; ctx.fillText(banner.text, 4, 4); ctx.fillStyle = "#d97757"; ctx.fillText(banner.text, 0, 0);
+    ctx.restore();
+  }
+  if (running && combo > 1) {
+    ctx.save(); ctx.font = `900 ${28 + combo * 3}px ui-monospace, monospace`; ctx.textAlign = "right";
+    ctx.fillStyle = "#d97757"; ctx.globalAlpha = Math.min(1, comboT); ctx.fillText(`x${combo}`, W - 24, 128); ctx.restore();
+  }
+
+  $("score").textContent = Math.floor(score);
+  $("lives").textContent = "●".repeat(Math.max(0, lives)) + "○".repeat(Math.max(0, 3 - lives));
+  $("bar").style.width = (blast * 100) + "%";
+}
+
+function loop(now) {
+  const dt = Math.min(.05, (now - lastT) / 1000); lastT = now;
+  update(dt, now); render(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+if (location.hash === "#debug") window.__dario = { boss: spawnBoss, power: spawnPower, hit: n => { hits = n; }, state: () => ({ score, lives, combo, shieldT, slowT, darios: darios.length, powers: powers.length, running, bossHp: darios.find(d => d.boss)?.hp ?? null }) };
+</script>
+</body>
+</html>
