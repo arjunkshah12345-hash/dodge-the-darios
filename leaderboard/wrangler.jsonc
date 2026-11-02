@@ -1,0 +1,10 @@
+{
+  "name": "dodge-the-darios-leaderboard",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "account_id": "f4d950ff9a79bf159c43ec05d05f4c8c",
+  "d1_databases": [
+    { "binding": "DB", "database_name": "dodge-the-darios", "database_id": "06d6a7f7-c311-46b7-8309-9f4cf4938849" }
+  ],
+  "observability": { "enabled": true }
+}

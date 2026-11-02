@@ -42,6 +42,25 @@
   .gh { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; padding: 9px 16px; border: 1px solid #f5efe640; border-radius: 999px;
     color: var(--cream); text-decoration: none; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; transition: background .2s, border-color .2s; }
   .gh:hover { background: #f5efe614; border-color: var(--clay); }
+  #overlay > .wrap { display: flex; gap: 56px; align-items: center; justify-content: center; }
+  #lb { width: 300px; text-align: left; background: #141413cc; border: 1px solid #f5efe626; border-radius: 16px; padding: 18px 20px; }
+  #lb h2 { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--clay); margin-bottom: 12px; display: flex; justify-content: space-between; }
+  #lb h2 span { color: var(--cream); opacity: .5; }
+  #lb ol { list-style: none; font-size: 13px; font-variant-numeric: tabular-nums; }
+  #lb li { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f5efe612; }
+  #lb li:last-child { border-bottom: 0; }
+  #lb li .r { opacity: .45; } #lb li b { font-weight: 700; }
+  #lb li:nth-child(1) .r { color: #e8c170; opacity: 1; } #lb li:nth-child(2) .r { color: #c9c9c9; opacity: 1; } #lb li:nth-child(3) .r { color: #c98a5a; opacity: 1; }
+  #lb li.me { color: var(--clay); }
+  #lb .empty { font-size: 12px; opacity: .55; line-height: 1.6; }
+  #submit { display: none; gap: 8px; justify-content: center; margin: -8px 0 22px; }
+  #submit.show { display: flex; }
+  #submit input { font: inherit; font-size: 14px; background: #f5efe612; color: var(--cream); border: 1px solid #f5efe640; border-radius: 999px;
+    padding: 12px 18px; width: 220px; outline: none; text-align: center; }
+  #submit input:focus { border-color: var(--clay); }
+  #submit button { animation: none; padding: 12px 20px; font-size: 13px; background: var(--cream); }
+  #submitMsg { font-size: 12px; margin: -12px 0 18px; min-height: 1em; color: var(--clay); }
+  @media (max-width: 900px) { #overlay > .wrap { flex-direction: column; gap: 22px; } #lb { width: min(340px, 100%); } #overlay { overflow-y: auto; } }
   .gh-corner { position: fixed; top: 92px; left: 24px; z-index: 6; color: var(--cream); opacity: .55; display: inline-flex; gap: 6px; align-items: center;
     font-size: 11px; letter-spacing: .12em; text-decoration: none; text-transform: uppercase; }
   .gh-corner:hover { opacity: 1; color: var(--clay); }
@@ -60,15 +79,20 @@
 </div>
 
 <div id="overlay">
+  <div class="wrap">
   <div>
     <div class="heads"><img src="dario.jpg" alt=""><img src="dario.jpg" alt=""><img src="dario.jpg" alt=""></div>
     <h1>DODGE THE<br><em>DARIOS</em></h1>
     <p class="sub" id="sub">Your face is the controller. Move your head to dodge incoming Dario Amodeis.
       <b>Open your mouth wide</b> to fire a scaling-law shockwave. Grab ✳ for a shield, ❚❚ for slow-mo. Every hit makes you look more like Dario.
       Close calls score bonus points. No webcam? Use the mouse + <kbd>space</kbd>.</p>
+    <form id="submit" autocomplete="off"><input id="name" maxlength="16" placeholder="your name" aria-label="Your name"><button type="submit">Submit score</button></form>
+    <div id="submitMsg"></div>
     <button id="start" disabled>Loading face model…</button>
     <div id="status"></div>
     <a class="gh" href="https://github.com/arjunkshah12345-hash/dodge-the-darios" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> Open source · star on GitHub</a>
+  </div>
+  <aside id="lb"><h2>Global leaderboard <span>top 10</span></h2><ol id="lbList"><li class="empty">Loading…</li></ol></aside>
   </div>
 </div>
 <a class="gh-corner" href="https://github.com/arjunkshah12345-hash/dodge-the-darios" target="_blank" rel="noopener" title="Source on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> GitHub</a>
@@ -133,13 +157,47 @@ function noise(dur, vol) {
 let face = { x: W/2, y: H/2, r: 80, ok: false, jaw: 0 };
 let darios = [], parts = [], pops = [], waves = [], powers = [];
 let score = 0, best = +localStorage.dariosBest || 0, lives = 3, t0 = 0, running = false, shake = 0, flash = 0, blast = 1, invuln = 0;
-let combo = 1, comboT = 0, shieldT = 0, slowT = 0, powerT = 8, bossT = 35, banner = null, hits = 0;
+let kills = 0, combo = 1, comboT = 0, shieldT = 0, slowT = 0, powerT = 8, bossT = 35, banner = null, hits = 0;
 let spawnT = 0, lastT = performance.now(), useMouse = false, mouse = { x: W/2, y: H/2 }, spaceDown = false;
 $("best").textContent = "BEST " + best;
 
 addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-addEventListener("keydown", e => { if (e.code === "Space") { spaceDown = true; e.preventDefault(); } });
+addEventListener("keydown", e => { if (e.code === "Space" && e.target.tagName !== "INPUT") { spaceDown = true; e.preventDefault(); } });
 addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+
+// ---- global leaderboard (Cloudflare Worker + D1, see /leaderboard) ----
+const LB_URL = "https://dodge-the-darios-leaderboard.arjunkshah21.workers.dev/scores";
+let lastRun = null, myName = localStorage.dariosName || "";
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function renderBoard(top, highlight) {
+  $("lbList").innerHTML = top.length
+    ? top.map((r, i) => `<li class="${r.name === highlight ? "me" : ""}"><span class="r">${i + 1}</span><span>${esc(r.name)}</span><b>${r.score}</b></li>`).join("")
+    : `<li class="empty">No scores yet. Be the first Dario-dodger on the board.</li>`;
+}
+async function loadBoard() {
+  try { const r = await fetch(LB_URL); renderBoard((await r.json()).top, myName); }
+  catch { $("lbList").innerHTML = `<li class="empty">Leaderboard offline. Your best is still saved locally.</li>`; }
+}
+loadBoard();
+$("name").value = myName;
+$("submit").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("name").value.trim();
+  if (!name || !lastRun) return;
+  const btn = $("submit").querySelector("button"); btn.disabled = true; $("submitMsg").textContent = "Submitting…";
+  try {
+    const r = await fetch(LB_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, ...lastRun }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "failed");
+    myName = name; localStorage.dariosName = name; lastRun = null;
+    $("submit").classList.remove("show");
+    $("submitMsg").textContent = d.rank <= 10 ? `You're #${d.rank} in the world. Dario is proud.` : `Ranked #${d.rank} globally. Keep dodging.`;
+    renderBoard(d.top, name);
+  } catch (err) {
+    $("submitMsg").textContent = err.message === "slow down" ? "Too many submissions. Try again in a minute." : "Couldn't submit: " + err.message;
+  }
+  btn.disabled = false;
+};
 
 // ---- face tracking ----
 let landmarker = null;
@@ -233,6 +291,7 @@ function addCombo(x, y, base, label) {
 }
 
 function killDario(d) {
+  if (running) kills++;
   d.dead = true; burst(d.x, d.y, d.boss ? 120 : 26, "#d97757", d.boss ? 900 : 500); sfx("kill");
   addCombo(d.x, d.y, d.boss ? 250 : d.big ? 50 : 25, d.boss ? "MEGA KILL " : "");
   if (d.boss) {
@@ -255,7 +314,8 @@ function pop(x, y, text, col = "#f5efe6", size = 28) { pops.push({ x, y, text, c
 function reset() {
   darios = []; parts = []; pops = []; waves = []; powers = [];
   score = 0; lives = 3; blast = 1; invuln = 1.5; t0 = performance.now(); spawnT = 0; running = true;
-  combo = 1; comboT = 0; shieldT = 0; slowT = 0; powerT = 8; bossT = 35; hits = 0; banner = { text: "DODGE!", life: 1.2 };
+  combo = 1; comboT = 0; shieldT = 0; slowT = 0; powerT = 8; bossT = 35; hits = 0; kills = 0; banner = { text: "DODGE!", life: 1.2 };
+  $("submit").classList.remove("show"); $("submitMsg").textContent = "";
   $("overlay").classList.add("hidden");
 }
 
@@ -267,6 +327,11 @@ function gameOver() {
   $("overlay").querySelector("h1").innerHTML = `DARIO'D<br><em>${Math.floor(score)}</em>`;
   $("sub").innerHTML = `You were aligned by ${Math.floor(score) < 300 ? "a lot of" : "too many"} Darios. Best: ${best}.<br>Your transformation into Dario is complete. Open your mouth for the shockwave — it's your only defense.`;
   $("start").textContent = "Again";
+  lastRun = { score: Math.floor(score), seconds: Math.floor((performance.now() - t0) / 1000), kills };
+  if (lastRun.score > 0 && lastRun.seconds >= 3) {
+    $("submit").classList.add("show"); $("submitMsg").textContent = "";
+    setTimeout(() => $("name").focus(), 50);
+  }
   // freeze-frame of you, Dario-fied, as a souvenir
   const snap = document.createElement("canvas"); snap.width = 360; snap.height = 360;
   const s = 360 / (face.r * 2.6);
